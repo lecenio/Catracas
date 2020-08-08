@@ -1,0 +1,136 @@
+-----------------------
+Documentação de Scripts
+-----------------------
+Domínio: CatracasInterative
+08/08/20 07:18:21
+-----------------------
+
+<xoCatraca.Process:xoCatraca_OnProcessChanged()>
+Sub xoCatraca_OnProcessChanged()
+	'Processa os sinais da catraca
+
+	IF Sensor1.Quality >= 192 AND Sensor2.Quality >= 192 THEN
+		IF Sensor1.TimeStamp = Sensor2.TimeStamp THEN
+			Application.TrackEvent "TimeStamp Igual"
+		END IF
+		
+		IF Sensor1.Value = 1 AND Item("Utilities").Item("SensorEsperado").Value = 0 THEN
+			Item("Utilities").Item("SensorEsperado").Value = 2
+			'Application.TrackEvent "Sensor Esperado = 2"
+		ELSEIF Sensor2.Value = 1 AND Item("Utilities").Item("SensorEsperado").Value = 0 THEN
+			Item("Utilities").Item("SensorEsperado").Value = 1
+			'Application.TrackEvent "Sensor Esperado = 1"
+		ELSEIF Sensor1.Value = 0 AND Sensor2.Value = 0 AND Item("Utilities").Item("SensorEsperado").Value > 2 THEN
+			Item("Utilities").Item("SensorEsperado").Value = 0		
+			'Application.TrackEvent "Sensor Esperado = 0"	
+		END IF
+					
+		IF (Sensor1.Value = 1 AND Item("Utilities").Item("SensorEsperado").Value = 1) OR (Sensor2.Value = 1 AND Item("Utilities").Item("SensorEsperado").Value = 2) THEN
+			
+			DIM Sensor1Time
+			DIM Sensor2Time
+			
+			Sensor1Time = REPLACE(E3Format(Sensor1.TimeStamp, "yyyy-MM-dd HH:mm:ss.000"),",",".")
+			Sensor2Time = REPLACE(E3Format(Sensor2.TimeStamp, "yyyy-MM-dd HH:mm:ss.000"),",",".")
+			
+			Item("Utilities").Item("DateDiffMilliseconds").StartTime = Sensor1Time
+			Item("Utilities").Item("DateDiffMilliseconds").Endtime = Sensor2Time
+			Item("Utilities").Item("DateDiffMilliseconds").Calc = Item("Utilities").Item("DateDiffMilliseconds").Calc + 1
+			
+			IF ABS(Item("Utilities").Item("DateDiffMilliseconds").Milliseconds) <= TempoMaxEntreSensores THEN
+			
+				'Grava no banco de dados
+				Item("Queries").Item("QryInsert").SetVariableValue "NumCatraca", Numero
+				Item("Queries").Item("QryInsert").SetVariableValue "DataHoraProcesso", REPLACE(E3Format(GetLocalTime(), "yyyy-MM-dd HH:mm:ss.000"),",",".")
+				Item("Queries").Item("QryInsert").SetVariableValue "TimeStampSensor1", Sensor1Time
+				Item("Queries").Item("QryInsert").SetVariableValue "TimeStampSensor2", Sensor2Time
+				IF Sensor1.TimeStamp < Sensor2.TimeStamp THEN
+					Item("Queries").Item("QryInsert").SetVariableValue "Direcao", 1
+				ELSEIF Sensor1.TimeStamp > Sensor2.TimeStamp THEN
+					Item("Queries").Item("QryInsert").SetVariableValue "Direcao", -1
+				ELSE
+					Item("Queries").Item("QryInsert").SetVariableValue "Direcao", 0
+				END IF
+				Item("Queries").Item("QryInsert").Execute
+				Item("Utilities").Item("SensorEsperado").Value = 3
+				'Application.TrackEvent "Sensor Esperado = 3 - Gravado"
+			ELSE
+				IF Sensor1.TimeStamp < Sensor2.TimeStamp THEN
+					Item("Utilities").Item("SensorEsperado").Value = 1
+					Application.TrackEvent "Sensor Esperado = 1 - Excesso de Tempo"
+				ELSEIF Sensor1.TimeStamp > Sensor2.TimeStamp THEN
+					Item("Utilities").Item("SensorEsperado").Value = 2
+					Application.TrackEvent "Sensor Esperado = 2 - Excesso de Tempo"
+				ELSE
+					Item("Utilities").Item("SensorEsperado").Value = 0
+					Application.TrackEvent "Sensor Esperado = 0 - Excesso de Tempo"
+				END IF
+			END IF
+			
+		ELSEIF Sensor1.Value = 1 AND Item("Utilities").Item("SensorEsperado").Value = 1 THEN
+			'Application.TrackEvent "Duplicidade sensor 1 na catraca " & Numero
+			
+		ELSEIF Sensor2.Value = 1 AND Item("Utilities").Item("SensorEsperado").Value = 2 THEN
+			'Application.TrackEvent "Duplicidade sensor 2 na catraca " & Numero
+			
+		END IF
+		
+	ELSE
+		'Application.TrackEvent "Qualidade ruim na catraca " & Numero
+	END IF
+End Sub
+
+
+
+<xoCatraca.Utilities:Utilities_Senso1OnValueChange()>
+Sub Utilities_Senso1OnValueChange()
+	Application.TrackEvent "TimeStamp Sensor 1 = " & REPLACE(E3Format(xoCatraca.Sensor1.TimeStamp, "yyyy-MM-dd HH:mm:ss.000"),",",".")		
+End Sub
+
+
+
+<xoCatraca.Utilities:Utilities_Senso2OnValueChange()>
+Sub Utilities_Senso2OnValueChange()
+	Application.TrackEvent "TimeStamp Sensor 2 = " & REPLACE(E3Format(xoCatraca.Sensor2.TimeStamp, "yyyy-MM-dd HH:mm:ss.000"),",",".")	
+End Sub
+
+
+
+<xoDateDiffMilliseconds.Calc:xoDateDiffMilliseconds_OnCalcChanged()>
+Sub xoDateDiffMilliseconds_OnCalcChanged()
+	'Calcula a diferença de tempo em segundos double para ter a informação númerica dos segundos
+	'Source: https://www.tek-tips.com/viewthread.cfm?qid=839835
+	IF Calc > 0 THEN
+		
+    	startArray = Split(StartTime, ".")
+    	EndArray = Split(EndTime, ".")
+    	
+    	Dim i 
+    	Dim startMS, endMS
+    	
+    	MainStartTime = CDate(startArray(0))
+    	startMS = CInt(startArray(1))
+    	
+    	MainEndTime = CDate(EndArray(0))
+    	endMS = CInt(EndArray(1))
+    	
+    	Dim diff
+    	Dim totaltime
+    	
+    	diff = DateDiff("s", MainStartTime, MainEndTime)
+    	
+    	If diff = 0 Then
+        	Milliseconds = endMS - startMS
+    	Else
+        	endMS = endMS + (1000 * diff)
+        	Milliseconds = endMS - startMS
+    	End If
+    	
+    	'Application.TrackEvent "Diferença em milisegundos = " & Milliseconds & " Incio = " & StartTime & " Fim = " & EndTime
+    	
+    	IF Calc > 2147483645 THEN Calc = 0 
+    END IF
+End Sub
+
+
+
